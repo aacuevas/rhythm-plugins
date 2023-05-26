@@ -1702,6 +1702,8 @@ bool DeviceThread::startAcquisition()
     blockSize = dataBlock->calculateDataBlockSizeInWords(evalBoard->getNumEnabledDataStreams(), evalBoard->isUSB3());
     //LOGD("Expecting blocksize of ", blockSize, " for ", evalBoard->getNumEnabledDataStreams(), " streams");
 
+    globalsample = 0;
+
     startThread();
 
     isTransmitting = true;
@@ -1823,10 +1825,10 @@ bool DeviceThread::updateBuffer()
                 {
                     if (chipId[dataStream] != CHIP_ID_RHD2164_B)
                     {
-                        int auxNum = (samp+3) % 4;
+                        int auxNum = (samp + 3) % 4;
                         if (auxNum < 3)
                         {
-                            auxSamples[dataStream][auxNum] = float(*(uint16*)(bufferPtr + auxIndex) - 32768)*0.0000374;
+                            auxSamples[dataStream][auxNum] = float(*(uint16*)(bufferPtr + auxIndex) - 32768) * 0.0000374;
                         }
                         for (int chan = 0; chan < 3; chan++)
                         {
@@ -1841,6 +1843,29 @@ bool DeviceThread::updateBuffer()
                     auxIndex += 2; // single chan width (2 bytes)
                 }
             }
+            else auxIndex += 2 * numStreams; //skip over aux2 anyway
+
+            for (int dataStream = 0; dataStream < numStreams; dataStream++)
+            {
+                //JON LOOK HERE
+                char c = *(char*)(bufferPtr + auxIndex);
+                if ((globalsample == 32 && c != 'I') ||
+                    (globalsample == 33 && c != 'N') ||
+                    (globalsample == 34 && c != 'T') ||
+                    (globalsample == 35 && c != 'A') ||
+                    (globalsample == 36 && c != 'N') ||
+                    (globalsample == 24 && c != 'R') ||
+                    (globalsample == 25 && c != 'H') ||
+                    (globalsample == 26 && c != 'D'))
+                {
+                    std::cout << "Lost INTAN connection in stream " << dataStream << " at "
+                        << Time::getCurrentTime().toString(false,true,true,true) <<
+                        std::endl;
+                }
+
+                auxIndex += 2;
+            }            
+
             index += 2 * numStreams; // skip over filler word at the end of each data stream
             // copy the 8 ADC channels
             if (settings.acquireAdc)
@@ -1877,6 +1902,9 @@ bool DeviceThread::updateBuffer()
                                           &ts,
                                           &ttlEventWord,
                                           1);
+            
+            if (globalsample < 59) globalsample++;
+            else globalsample = 0;
         }
 
     }
